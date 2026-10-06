@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="description" content="Diario personale delle ore di trasferta">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<title>Ore Trasferta</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#111827;background:#f8fafc}
+*{box-sizing:border-box}body{margin:0}.app{max-width:680px;margin:auto;padding:16px}
+header{display:flex;justify-content:space-between;align-items:end;gap:12px;margin-bottom:10px}
+.small{font-size:13px;color:#64748b}.title{font-size:28px;font-weight:800}.total{font-size:30px;font-weight:800;text-align:right}
+button,input,textarea{font:inherit}button{cursor:pointer;border:1px solid #d1d5db;background:white;border-radius:14px}
+.nav{display:flex;gap:8px;align-items:center;margin:8px 0 14px}.nav button{padding:10px 15px;font-weight:700}.date{flex:1;text-align:center;font-weight:700}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.act{min-height:72px;font-weight:750;font-size:16px}.act:last-child{grid-column:1/-1}
+.card{background:white;border:1px solid #e2e8f0;border-radius:16px;padding:14px;margin-top:14px}
+.hidden{display:none!important}.field{margin-top:10px}.field label{display:block;font-size:13px;font-weight:700;margin-bottom:5px}
+input,textarea{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff}
+.times{display:grid;grid-template-columns:1fr 1fr;gap:10px}.actions{display:flex;gap:8px;margin-top:12px}.primary{flex:1;background:#111827;color:white;border-color:#111827;padding:13px;font-weight:800}.secondary{padding:13px}
+.entry{display:flex;justify-content:space-between;gap:10px;align-items:center}.entry+.entry{margin-top:8px}.entry-main{min-width:0}.entry-title{font-weight:750}.entry-meta{font-size:13px;color:#64748b}.note{font-size:13px;margin-top:3px;white-space:pre-wrap}.entry-actions{display:flex;gap:4px}.iconbtn{border:0;background:transparent;padding:9px}
+.summary{display:grid;grid-template-columns:1fr 1fr;gap:10px}.sum{background:white;border:1px solid #e2e8f0;border-radius:14px;padding:12px}.sum b{display:block;font-size:20px;margin-top:3px}
+.empty{text-align:center;color:#64748b;padding:24px 8px}.danger{color:#b91c1c;border-color:#fecaca}
+@media(max-width:360px){.app{padding:12px}.title{font-size:24px}.total{font-size:25px}}
+</style>
+</head>
+<body>
+<main class="app">
+<header><div><div id="dayName" class="small"></div><div class="title">Diario ore</div></div><div><div id="total" class="total">0h 00m</div><div class="small" style="text-align:right">totale</div></div></header>
+
+<div class="nav">
+<button id="prev">‹</button><div id="dateLabel" class="date"></div><button id="next">›</button><button id="today">Oggi</button>
+</div>
+
+<section id="editor" class="card hidden">
+<div style="display:flex;justify-content:space-between;align-items:center"><strong id="editorTitle" style="font-size:18px">Nuova attività</strong><button id="close" class="iconbtn">✕</button></div>
+<div class="field"><label for="type">Attività</label><input id="type" placeholder="Nome attività"></div>
+<div class="times">
+<div class="field"><label for="start">Inizio</label><input id="start" type="time"></div>
+<div class="field"><label for="end">Fine</label><input id="end" type="time"></div>
+</div>
+<div class="field"><label for="note">Nota <span class="small">(facoltativa)</span></label><textarea id="note" rows="2" placeholder="Es. avviamento linea 2"></textarea></div>
+<div id="error" class="small" style="color:#b91c1c;margin-top:8px"></div>
+<div class="actions"><button id="cancel" class="secondary">Annulla</button><button id="save" class="primary">SALVA</button></div>
+</section>
+
+<section id="buttons" class="grid">
+<button class="act" data-type="Viaggio">🚗<br>Viaggio</button>
+<button class="act" data-type="Supervisione impianto">🏭<br>Supervisione impianto</button>
+<button class="act" data-type="Progettazione">📐<br>Progettazione</button>
+<button class="act" data-type="Incontro cliente">🤝<br>Incontro cliente</button>
+<button class="act" data-custom>➕<br>Altra attività</button>
+</section>
+
+<section class="card">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><strong>Registrazioni</strong><button id="clear" class="iconbtn danger">Cancella giornata</button></div>
+<div id="list"></div><div id="empty" class="empty">Nessuna attività registrata.</div>
+</section>
+
+<section class="summary">
+<div class="sum"><span class="small">🚗 Viaggio</span><b id="travel">0h 00m</b></div>
+<div class="sum"><span class="small">💼 Lavoro</span><b id="work">0h 00m</b></div>
+</section>
+
+<div id="installHint" class="small" style="text-align:center;margin:16px 0 4px"></div>
+</main>
+
+<script>
+const DBKEY="ore-trasferta-v1";
+let selected=new Date(), editing=null;
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,"0");
+const dateKey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const fmtDate=d=>d.toLocaleDateString("it-IT",{day:"numeric",month:"long",year:"numeric"});
+const fmtDay=d=>d.toLocaleDateString("it-IT",{weekday:"long"});
+const minutes=(a,b)=>{let [ah,am]=a.split(":").map(Number),[bh,bm]=b.split(":").map(Number),m=(bh*60+bm)-(ah*60+am);return m<0?m+1440:m};
+const dur=m=>`${Math.floor(m/60)}h ${pad(m%60)}m`;
+function all(){try{return JSON.parse(localStorage.getItem(DBKEY)||"{}")}catch{return{}}}
+function get(){return all()[dateKey(selected)]||[]}
+function set(items){const x=all(); if(items.length)x[dateKey(selected)]=items; else delete x[dateKey(selected)]; localStorage.setItem(DBKEY,JSON.stringify(x))}
+function esc(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function render(){
+ const items=get(), total=items.reduce((s,x)=>s+x.min,0), travel=items.filter(x=>x.type==="Viaggio").reduce((s,x)=>s+x.min,0);
+ $("dayName").textContent=fmtDay(selected).replace(/^./,c=>c.toUpperCase());
+ $("dateLabel").textContent=fmtDate(selected); $("total").textContent=dur(total); $("travel").textContent=dur(travel); $("work").textContent=dur(total-travel);
+ $("list").innerHTML=items.map((x,i)=>`<div class="entry card" style="margin-top:8px;padding:11px"><div class="entry-main"><div class="entry-title">${esc(x.type)}</div><div class="entry-meta">${x.start} → ${x.end} · ${dur(x.min)}</div>${x.note?`<div class="note">📝 ${esc(x.note)}</div>`:""}</div><div class="entry-actions"><button class="iconbtn" data-edit="${i}">✏️</button><button class="iconbtn" data-del="${i}">🗑️</button></div></div>`).join("");
+ $("empty").style.display=items.length?"none":"block";
+}
+function openEditor(type="",idx=null){
+ editing=idx; const x=idx===null?{type,start:"",end:"",note:""}:get()[idx];
+ $("type").value=type||x.type;$("start").value=x.start;$("end").value=x.end;$("note").value=x.note||"";
+ $("editorTitle").textContent=idx===null?"Nuova attività":"Modifica attività";$("error").textContent="";
+ $("editor").classList.remove("hidden");$("buttons").classList.add("hidden");$("type").focus();
+}
+function closeEditor(){editing=null;$("editor").classList.add("hidden");$("buttons").classList.remove("hidden")}
+document.querySelectorAll("[data-type]").forEach(b=>b.onclick=()=>openEditor(b.dataset.type));
+document.querySelector("[data-custom]").onclick=()=>openEditor();
+$("close").onclick=$("cancel").onclick=closeEditor;
+$("save").onclick=()=>{
+ const type=$("type").value.trim(),a=$("start").value,b=$("end").value,n=$("note").value.trim();
+ if(!type||!a||!b){$("error").textContent="Inserisci attività, inizio e fine.";return}
+ const min=minutes(a,b); if(min===0){$("error").textContent="Inizio e fine non possono coincidere.";return}
+ const items=get(), obj={type,start:a,end:b,note:n,min}; if(editing===null)items.push(obj);else items[editing]=obj; set(items);closeEditor();render();
+};
+$("list").onclick=e=>{const b=e.target.closest("button");if(!b)return;const i=Number(b.dataset.edit??b.dataset.del);if(b.dataset.edit!==undefined)openEditor("",i);else{const items=get();items.splice(i,1);set(items);render()}};
+$("prev").onclick=()=>{selected.setDate(selected.getDate()-1);render()};
+$("next").onclick=()=>{selected.setDate(selected.getDate()+1);render()};
+$("today").onclick=()=>{selected=new Date();render()};
+$("clear").onclick=()=>{if(get().length&&confirm("Cancellare tutte le registrazioni di questa giornata?")){set([]);render()}};
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();window._install=e;$("installHint").textContent="Puoi installare l'app dal menu del browser → Aggiungi alla schermata Home."});
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+$("installHint").textContent="Per installarla: menu del browser → Aggiungi alla schermata Home.";
+render();
+</script>
+</body>
+</html>
